@@ -1,12 +1,17 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevy::input::mouse::MouseWheel;
 use crate::Components::VuisElement::{EditorCanvas, VuisNode};
+use crate::Editor::EditorPlugin::{CanvasSettings, EditorSelection};
 
 #[derive(Component)]
 pub struct NodeGridLine;
 
 pub fn SetupCanvas(mut Commands: Commands) {
-    Commands.spawn(Camera2d);
+    Commands.spawn((
+        Camera2d,
+        bevy::core_pipeline::tonemapping::Tonemapping::None,
+    ));
 
     Commands.spawn((
         Node {
@@ -34,21 +39,46 @@ pub fn SetupCanvas(mut Commands: Commands) {
             },
             BorderColor::all(Color::srgb(0.1, 0.1, 0.1)),
             BackgroundColor(Color::srgb(0.25, 0.25, 0.25)),
+            Transform::IDENTITY,
         ));
     });
 }
 
 pub fn ScaleCanvasSystem(
     WindowQuery: Query<&Window, With<PrimaryWindow>>,
-    mut QueryCanvas: Query<&mut Transform, With<EditorCanvas>>,
+    CanvasSettings: Res<CanvasSettings>,
+    mut QueryCanvas: Query<(&mut Transform, &mut Node), With<EditorCanvas>>,
 ) {
     let Ok(Window) = WindowQuery.single() else { return; };
-    let ScaleX = Window.width() / 1920.0;
-    let ScaleY = Window.height() / 1080.0;
-    let ScaleFactor = f32::min(ScaleX, ScaleY).max(0.1);
+    let BaseScaleX = Window.width() / CanvasSettings.Width;
+    let BaseScaleY = Window.height() / CanvasSettings.Height;
+    let BaseScaleFactor = f32::min(BaseScaleX, BaseScaleY).max(0.1);
+    let FinalScale = BaseScaleFactor * CanvasSettings.Zoom;
 
-    for mut transform in QueryCanvas.iter_mut() {
-        transform.scale = Vec3::new(ScaleFactor, ScaleFactor, 1.0);
+    for (mut transform, mut node) in QueryCanvas.iter_mut() {
+        node.width = Val::Px(CanvasSettings.Width);
+        node.height = Val::Px(CanvasSettings.Height);
+        node.margin = UiRect {
+            left: Val::Px(-CanvasSettings.Width / 2.0),
+            top: Val::Px(-CanvasSettings.Height / 2.0),
+            ..default()
+        };
+        transform.scale = Vec3::new(FinalScale, FinalScale, 1.0);
+    }
+}
+
+pub fn ZoomSystem(
+    mut MouseWheelEvents: MessageReader<MouseWheel>,
+    KeyboardInput: Res<ButtonInput<KeyCode>>,
+    mut CanvasSettings: ResMut<CanvasSettings>,
+    SelectedEntity: Res<EditorSelection>,
+) {
+    let Ctrl = KeyboardInput.pressed(KeyCode::ControlLeft) || KeyboardInput.pressed(KeyCode::ControlRight);
+    if Ctrl && !SelectedEntity.IsPointerOverUi {
+        for event in MouseWheelEvents.read() {
+            let ZoomDelta = event.y * 0.05;
+            CanvasSettings.Zoom = (CanvasSettings.Zoom + ZoomDelta).clamp(0.1, 5.0);
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::Components::VuisElement::EditorCanvas;
+use crate::Components::VuisElement::{EditorCanvas, PlaceholderTextComponent};
 use crate::Serialization::VuisFormat::{VuisFile, VuisDataNode};
 use crate::Serialization::VuisSerializer::{BuildDataTree, SpawnDataTree};
 use crate::Editor::EditorPlugin::EditorSelection;
@@ -23,7 +23,7 @@ pub fn RecordHistorySystem(
     mut Events: MessageReader<RecordHistoryEvent>,
     mut History: ResMut<UndoRedoHistory>,
     QueryNodes: Query<(&crate::Components::VuisElement::VuisNode, Option<&Children>)>,
-    QueryText: Query<&Text>,
+    QueryText: Query<&Text, Without<PlaceholderTextComponent>>,
     QueryCanvas: Query<&Children, With<EditorCanvas>>,
 ) {
     for _ in Events.read() {

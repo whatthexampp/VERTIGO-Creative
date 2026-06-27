@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::EguiContexts;
 use bevy::ecs::relationship::Relationship;
-use crate::Components::VuisElement::{VuisNode, EditorCanvas};
-use crate::Editor::EditorPlugin::{EditorSelection, EditorConfig};
+use crate::Components::VuisElement::{EditorCanvas, PlaceholderTextComponent, VuisNode};
+use crate::Editor::EditorPlugin::{EditorSelection, EditorConfig, CanvasSettings};
 use crate::Serialization::VuisFormat::VuisDataNode;
 use serde_json;
 
@@ -90,6 +90,7 @@ pub fn SelectionAndDragSystem(
     mut EguiCtxs: EguiContexts,
     Config: Res<EditorConfig>,
     mut RecordEvents: MessageWriter<crate::Editor::History::RecordHistoryEvent>,
+    CanvasSettings: Res<CanvasSettings>,
 ) {
     let Ok(Window) = WindowQuery.single() else { return; };
     let Ok(CanvasEnt) = QueryCanvas.single() else { return; };
@@ -330,8 +331,8 @@ pub fn SelectionAndDragSystem(
                                     let my_hw = my_w / 2.0;
                                     let my_hh = my_h / 2.0;
 
-                                    let mut SnapLinesX = vec![1920.0 / 2.0, 0.0, 1920.0];
-                                    let mut SnapLinesY = vec![1080.0 / 2.0, 0.0, 1080.0];
+                                    let mut SnapLinesX = vec![CanvasSettings.Width / 2.0, 0.0, CanvasSettings.Width];
+                                    let mut SnapLinesY = vec![CanvasSettings.Height / 2.0, 0.0, CanvasSettings.Height];
 
                                     {
                                         let QueryReadOnly = ParamSet.p1();
@@ -542,7 +543,7 @@ pub fn SelectionAndDragSystem(
                         if let Ok((_, _, _, _, global_trans, _)) = QueryReadOnly.get(DragEnt) {
                             let phys_center = global_trans.transform_point2(Vec2::ZERO);
                             let center_logical = PhysicalToNodeRelative(phys_center, &canvas_global, &canvas_computed);
-                            if center_logical.x < 0.0 || center_logical.x > 1920.0 || center_logical.y < 0.0 || center_logical.y > 1080.0 {
+                            if center_logical.x < 0.0 || center_logical.x > CanvasSettings.Width || center_logical.y < 0.0 || center_logical.y > CanvasSettings.Height {
                                 IsOutside = true;
                                 CenterCanvas = center_logical;
                             }
@@ -689,7 +690,7 @@ pub fn KeyboardCopyPasteSystem(
     SelectedEntity: Res<EditorSelection>,
     mut CopyBuffer: ResMut<CopyPasteBuffer>,
     QueryNodes: Query<(&VuisNode, Option<&Children>)>,
-    QueryText: Query<&Text>,
+    QueryText: Query<&Text, Without<PlaceholderTextComponent>>,
     QueryCanvas: Query<Entity, With<EditorCanvas>>,
     mut Commands: Commands,
     mut Images: ResMut<Assets<Image>>,

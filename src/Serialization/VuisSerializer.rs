@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
 use flate2::Compression;
-use crate::Components::VuisElement::{VuisNode, VuisAnimationState, EditorCanvas, load_image_from_bytes};
+use crate::Components::VuisElement::{VuisNode, VuisAnimationState, EditorCanvas, load_image_from_bytes, PlaceholderTextComponent};
 use crate::Serialization::VuisFormat::{VuisFile, VuisDataNode};
 use crate::Editor::EditorPlugin::EditorSelection;
 
@@ -31,10 +31,21 @@ pub struct LoadVuisEvent {
     pub FilePath: String,
 }
 
+fn GetColorComponents(color: Color) -> [f32; 4] {
+    match color {
+        Color::LinearRgba(linear) => [linear.red, linear.green, linear.blue, linear.alpha],
+        Color::Srgba(srgba) => [srgba.red, srgba.green, srgba.blue, srgba.alpha],
+        _ => {
+            let srgba = color.to_srgba();
+            [srgba.red, srgba.green, srgba.blue, srgba.alpha]
+        }
+    }
+}
+
 pub fn SaveSystem(
     mut SaveEvents: MessageReader<SaveVuisEvent>,
     QueryNodes: Query<(&VuisNode, Option<&Children>)>,
-    QueryText: Query<&Text>,
+    QueryText: Query<&Text, Without<PlaceholderTextComponent>>,
     QueryCanvas: Query<&Children, With<EditorCanvas>>,
 ) {
     for Event in SaveEvents.read() {
@@ -95,9 +106,13 @@ pub fn SaveSystem(
                 },
             };
             if let Ok(JsonString) = serde_json::to_string(&FileData) {
-                if let Ok(File) = std::fs::File::create(&Event.FilePath) {
-                    let mut Encoder = GzEncoder::new(File, Compression::default());
-                    let _ = Encoder.write_all(JsonString.as_bytes());
+                if let Ok(mut File) = fs::File::create(&Event.FilePath) {
+                    let mut Encoder = GzEncoder::new(Vec::new(), Compression::default());
+                    if Encoder.write_all(JsonString.as_bytes()).is_ok() {
+                        if let Ok(CompressedData) = Encoder.finish() {
+                            let _ = File.write_all(&CompressedData);
+                        }
+                    }
                 }
             }
         }
@@ -112,41 +127,25 @@ pub fn LoadSystem(
     QueryCanvas: Query<Entity, With<EditorCanvas>>,
     QueryCanvasChildren: Query<&Children, With<EditorCanvas>>,
     mut SelectedEntity: ResMut<EditorSelection>,
-    mut RecordEvents: MessageWriter<crate::Editor::History::RecordHistoryEvent>,
 ) {
     for Event in LoadEvents.read() {
-        let mut LoadedData = None;
-
-        if let Ok(File) = std::fs::File::open(&Event.FilePath) {
-            let mut Decoder = GzDecoder::new(File);
+        if let Ok(CompressedData) = fs::read(&Event.FilePath) {
+            let mut Decoder = GzDecoder::new(&CompressedData[..]);
             let mut JsonString = String::new();
             if Decoder.read_to_string(&mut JsonString).is_ok() {
                 if let Ok(FileData) = serde_json::from_str::<VuisFile>(&JsonString) {
-                    LoadedData = Some(FileData);
-                }
-            }
-        }
-
-        if LoadedData.is_none() {
-            if let Ok(RawString) = fs::read_to_string(&Event.FilePath) {
-                if let Ok(FileData) = serde_json::from_str::<VuisFile>(&RawString) {
-                    LoadedData = Some(FileData);
-                }
-            }
-        }
-
-        if let Some(FileData) = LoadedData {
-            if let Ok(CanvasEntity) = QueryCanvas.single() {
-                if let Ok(CanvasChildren) = QueryCanvasChildren.get(CanvasEntity) {
-                    for ChildEntity in CanvasChildren.iter() {
-                        Commands.entity(ChildEntity).despawn();
+                    if let Ok(CanvasEntity) = QueryCanvas.single() {
+                        if let Ok(CanvasChildren) = QueryCanvasChildren.get(CanvasEntity) {
+                            for ChildEntity in CanvasChildren.iter() {
+                                Commands.entity(ChildEntity).despawn();
+                            }
+                        }
+                        SelectedEntity.SelectedNode = None;
+                        for ChildData in &FileData.Root.Children {
+                            SpawnDataTree(&mut Commands, &mut Images, &mut Fonts, CanvasEntity, ChildData);
+                        }
                     }
                 }
-                SelectedEntity.SelectedNode = None;
-                for ChildData in &FileData.Root.Children {
-                    SpawnDataTree(&mut Commands, &mut Images, &mut Fonts, CanvasEntity, ChildData);
-                }
-                RecordEvents.write(crate::Editor::History::RecordHistoryEvent);
             }
         }
     }
@@ -155,7 +154,7 @@ pub fn LoadSystem(
 pub fn BuildDataTree(
     CurrentEntity: Entity,
     QueryNodes: &Query<(&VuisNode, Option<&Children>)>,
-    QueryText: &Query<&Text>,
+    QueryText: &Query<&Text, Without<PlaceholderTextComponent>>,
 ) -> Option<VuisDataNode> {
     if let Ok((NodeComponent, ChildrenComponent)) = QueryNodes.get(CurrentEntity) {
         let mut ChildNodes = Vec::new();
@@ -170,18 +169,26 @@ pub fn BuildDataTree(
                 }
             }
         }
-        let Base64String = NodeComponent.ImageData.as_ref().map(|Data| BASE64_STANDARD.encode(Data));
-        let Base64FontString = NodeComponent.FontData.as_ref().map(|Data| BASE64_STANDARD.encode(Data));
-        let LinearColor = NodeComponent.BackgroundColor.to_linear();
-        let LinearTextColor = NodeComponent.TextColor.to_linear();
-        let LinearBorderColor = NodeComponent.BorderColor.to_linear();
-        let LinearGrad1 = NodeComponent.GradientColor1.to_linear();
-        let LinearGrad2 = NodeComponent.GradientColor2.to_linear();
-        let LinearShadowColor = NodeComponent.ShadowColor.to_linear();
+
+        let Base64String = NodeComponent.ImageData.as_ref().map(|data| {
+            BASE64_STANDARD.encode(data)
+        });
+
+        let Base64FontString = NodeComponent.FontData.as_ref().map(|data| {
+            BASE64_STANDARD.encode(data)
+        });
+
+        let extracted_bg_color = GetColorComponents(NodeComponent.BackgroundColor);
+        let extracted_text_color = GetColorComponents(NodeComponent.TextColor);
+        let extracted_border_color = GetColorComponents(NodeComponent.BorderColor);
+        let extracted_grad1 = GetColorComponents(NodeComponent.GradientColor1);
+        let extracted_grad2 = GetColorComponents(NodeComponent.GradientColor2);
+        let extracted_shadow_color = GetColorComponents(NodeComponent.ShadowColor);
+
         Some(VuisDataNode {
             Id: NodeComponent.Id.clone(),
-            ColorRgba: [LinearColor.red, LinearColor.green, LinearColor.blue, LinearColor.alpha],
-            TextColorRgba: Some([LinearTextColor.red, LinearTextColor.green, LinearTextColor.blue, LinearTextColor.alpha]),
+            ColorRgba: extracted_bg_color,
+            TextColorRgba: Some(extracted_text_color),
             FontFamily: Some(NodeComponent.FontFamily.clone()),
             FontSizePx: Some(NodeComponent.FontSizePx),
             WidthPx: NodeComponent.WidthPx,
@@ -202,17 +209,17 @@ pub fn BuildDataTree(
             Rotation: NodeComponent.Rotation,
             BorderRadiusPx: NodeComponent.BorderRadiusPx,
             BorderWidthPx: NodeComponent.BorderWidthPx,
-            BorderColorRgba: [LinearBorderColor.red, LinearBorderColor.green, LinearBorderColor.blue, LinearBorderColor.alpha],
+            BorderColorRgba: extracted_border_color,
             IsGradient: NodeComponent.IsGradient,
-            GradientColor1Rgba: [LinearGrad1.red, LinearGrad1.green, LinearGrad1.blue, LinearGrad1.alpha],
-            GradientColor2Rgba: [LinearGrad2.red, LinearGrad2.green, LinearGrad2.blue, LinearGrad2.alpha],
+            GradientColor1Rgba: extracted_grad1,
+            GradientColor2Rgba: extracted_grad2,
             IsInput: NodeComponent.IsInput,
             IsHidden: NodeComponent.IsHidden,
             IsBold: NodeComponent.IsBold,
             IsItalic: NodeComponent.IsItalic,
             Placeholder: NodeComponent.Placeholder.clone(),
             HasShadow: Some(NodeComponent.HasShadow),
-            ShadowColorRgba: Some([LinearShadowColor.red, LinearShadowColor.green, LinearShadowColor.blue, LinearShadowColor.alpha]),
+            ShadowColorRgba: Some(extracted_shadow_color),
             ShadowOffsetX: Some(NodeComponent.ShadowOffsetX),
             ShadowOffsetY: Some(NodeComponent.ShadowOffsetY),
             ShadowBlur: Some(NodeComponent.ShadowBlur),
@@ -229,25 +236,33 @@ pub fn BuildDataTree(
     }
 }
 
-pub fn SpawnDataTree(Commands: &mut Commands, Images: &mut Assets<Image>, Fonts: &mut Assets<Font>, Parent: Entity, Data: &VuisDataNode) {
-    let mut ImageData = None;
-    let mut ImageHandle = None;
-    let mut FontData = None;
+pub fn SpawnDataTree(
+    Commands: &mut Commands,
+    Images: &mut ResMut<Assets<Image>>,
+    Fonts: &mut ResMut<Assets<Font>>,
+    ParentEntity: Entity,
+    Data: &VuisDataNode,
+) {
+    let mut ImageData = Option::None;
+    let mut ImageHandle = Option::None;
 
-    if let Some(Base64String) = &Data.Base64Image {
-        if let Ok(DecodedBytes) = BASE64_STANDARD.decode(Base64String) {
-            ImageData = Some(DecodedBytes.clone());
-            if let Some(LoadedImage) = load_image_from_bytes(&DecodedBytes) {
+    if let Some(Base64Img) = &Data.Base64Image {
+        if let Ok(Decoded) = BASE64_STANDARD.decode(Base64Img) {
+            if let Some(LoadedImage) = load_image_from_bytes(&Decoded) {
                 ImageHandle = Some(Images.add(LoadedImage));
+                ImageData = Some(Decoded);
             }
         }
     }
 
-    if let Some(Base64FontString) = &Data.Base64Font {
-        if let Ok(DecodedBytes) = BASE64_STANDARD.decode(Base64FontString) {
-            if ttf_parser::Face::parse(&DecodedBytes, 0).is_ok() {
-                FontData = Some(DecodedBytes);
-            }
+    let mut FontData = Option::None;
+    let mut FontHandle = Option::None;
+
+    if let Some(Base64Fnt) = &Data.Base64Font {
+        if let Ok(Decoded) = BASE64_STANDARD.decode(Base64Fnt) {
+            let LoadedFont = Font::from_bytes(Decoded.clone());
+            FontHandle = Some(Fonts.add(LoadedFont));
+            FontData = Some(Decoded);
         }
     }
 
@@ -267,7 +282,7 @@ pub fn SpawnDataTree(Commands: &mut Commands, Images: &mut Assets<Image>, Fonts:
                 alpha: tc[3],
             })
         } else {
-            Color::WHITE
+            Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })
         },
         FontFamily: Data.FontFamily.clone().unwrap_or_default(),
         FontSizePx: Data.FontSizePx.unwrap_or(16.0),
@@ -276,7 +291,7 @@ pub fn SpawnDataTree(Commands: &mut Commands, Images: &mut Assets<Image>, Fonts:
         IsImage: Data.IsImage,
         ImageData,
         HasText: Data.HasText,
-        FontData: FontData.clone(),
+        FontData,
         AnimTargetWidth: Data.AnimTargetWidth,
         AnimTargetHeight: Data.AnimTargetHeight,
         AnimTargetX: Data.AnimTargetX.unwrap_or(Data.PositionX),
@@ -321,7 +336,7 @@ pub fn SpawnDataTree(Commands: &mut Commands, Images: &mut Assets<Image>, Fonts:
                 alpha: sc[3],
             })
         } else {
-            Color::srgba(0.0, 0.0, 0.0, 0.5)
+            Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.5 })
         },
         ShadowOffsetX: Data.ShadowOffsetX.unwrap_or(4.0),
         ShadowOffsetY: Data.ShadowOffsetY.unwrap_or(4.0),
@@ -358,8 +373,12 @@ pub fn SpawnDataTree(Commands: &mut Commands, Images: &mut Assets<Image>, Fonts:
         Transform::from_rotation(Quat::from_rotation_z(-Data.Rotation)),
     ));
 
-    if Data.BorderWidthPx > 0.0 {
-        EntityCommands.insert(BorderColor::all(NewNode.BorderColor));
+    if NewNode.IsHidden {
+        EntityCommands.insert(Visibility::Hidden);
+    }
+
+    if let Some(Handle) = ImageHandle {
+        EntityCommands.insert(ImageNode::new(Handle));
     }
 
     if NewNode.HasShadow {
@@ -372,13 +391,9 @@ pub fn SpawnDataTree(Commands: &mut Commands, Images: &mut Assets<Image>, Fonts:
         ));
     }
 
-    if let Some(Handle) = ImageHandle {
-        EntityCommands.insert(ImageNode::new(Handle));
-    }
-
-    if Data.IsGradient {
+    if NewNode.IsGradient {
         EntityCommands.insert(BackgroundGradient::from(LinearGradient {
-            color_space: InterpolationColorSpace::Srgba,
+            color_space: InterpolationColorSpace::Oklaba,
             angle: 0.0,
             stops: vec![
                 ColorStop::percent(NewNode.GradientColor1, 0.0),
@@ -387,39 +402,35 @@ pub fn SpawnDataTree(Commands: &mut Commands, Images: &mut Assets<Image>, Fonts:
         }));
     }
 
-    if Data.IsHidden {
-        EntityCommands.insert(Visibility::Hidden);
-    } else {
-        EntityCommands.insert(Visibility::Inherited);
+    if NewNode.BorderWidthPx > 0.0 {
+        EntityCommands.insert(BorderColor::all(NewNode.BorderColor));
     }
 
-    let ChildEntity = EntityCommands.id();
+    let SpawnedEntity = EntityCommands.id();
 
-    if Data.HasText {
-        let mut TextEntity = Commands.spawn((
+    if NewNode.HasText {
+        let mut TextCommands = Commands.spawn((
             Text::new(Data.TextContent.clone().unwrap_or_default()),
             TextColor(NewNode.TextColor),
         ));
-        
-        if Data.IsInput {
-            TextEntity.insert(bevy::text::EditableText::default());
-        }
-        
-        if let Some(Bytes) = FontData {
-            let LoadedFont = Font::from_bytes(Bytes);
-            let Handle = Fonts.add(LoadedFont);
-            TextEntity.insert(TextFont { font: FontSource::Handle(Handle), font_size: FontSize::Px(NewNode.FontSizePx), ..default() });
+
+        if let Some(Handle) = FontHandle {
+            TextCommands.insert(TextFont { font: FontSource::Handle(Handle), font_size: FontSize::Px(NewNode.FontSizePx), ..default() });
         } else {
-            TextEntity.insert(TextFont { font_size: FontSize::Px(NewNode.FontSizePx), ..default() });
+            TextCommands.insert(TextFont { font_size: FontSize::Px(NewNode.FontSizePx), ..default() });
         }
-        
-        let Id = TextEntity.id();
-        Commands.entity(ChildEntity).add_child(Id);
+
+        if NewNode.IsInput {
+            TextCommands.insert(bevy::text::EditableText::default());
+        }
+
+        let TextEntity = TextCommands.id();
+        Commands.entity(SpawnedEntity).add_child(TextEntity);
     }
 
-    Commands.entity(Parent).add_child(ChildEntity);
+    Commands.entity(ParentEntity).add_child(SpawnedEntity);
 
     for ChildData in &Data.Children {
-        SpawnDataTree(Commands, Images, Fonts, ChildEntity, ChildData);
+        SpawnDataTree(Commands, Images, Fonts, SpawnedEntity, ChildData);
     }
 }

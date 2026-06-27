@@ -4,14 +4,11 @@ use bevy::ui::{BackgroundGradient, LinearGradient, ColorStop, InterpolationColor
 use bevy_egui::{egui, EguiContexts};
 use rfd::FileDialog;
 use std::fs;
-use crate::Components::VuisElement::{VuisNode, VuisAnimationState, EditorCanvas, SelectedNode, load_image_from_bytes};
+use crate::Components::VuisElement::{VuisNode, VuisAnimationState, EditorCanvas, SelectedNode, load_image_from_bytes, PlaceholderTextComponent};
 use crate::Serialization::VuisSerializer::{SaveVuisEvent, LoadVuisEvent};
-use crate::Editor::EditorPlugin::{EditorSelection, EditorConfig};
+use crate::Editor::EditorPlugin::{EditorSelection, EditorConfig, CanvasSettings};
 use bevy::text::{FontWeight, FontStyle};
 use bevy::ecs::system::SystemParam;
-
-#[derive(Component)]
-pub struct PlaceholderTextComponent(pub Entity);
 
 #[derive(SystemParam)]
 pub struct EditorUiAssetsAndEvents<'w> {
@@ -22,6 +19,17 @@ pub struct EditorUiAssetsAndEvents<'w> {
     pub UndoEvents: MessageWriter<'w, crate::Editor::History::UndoEvent>,
     pub RedoEvents: MessageWriter<'w, crate::Editor::History::RedoEvent>,
     pub RecordEvents: MessageWriter<'w, crate::Editor::History::RecordHistoryEvent>,
+}
+
+fn GetColorComponents(color: Color) -> [f32; 4] {
+    match color {
+        Color::LinearRgba(linear) => [linear.red, linear.green, linear.blue, linear.alpha],
+        Color::Srgba(srgba) => [srgba.red, srgba.green, srgba.blue, srgba.alpha],
+        _ => {
+            let srgba = color.to_srgba();
+            [srgba.red, srgba.green, srgba.blue, srgba.alpha]
+        }
+    }
 }
 
 pub fn PlaceholderUpdateSystem(
@@ -60,7 +68,7 @@ pub fn PlaceholderUpdateSystem(
             Commands.entity(node_entity).add_child(p_ent);
         }
     }
-    
+
     for (mut p_text, mut p_vis, p_comp) in QueryPlaceholderMut.iter_mut() {
         if let Ok((_, vnode, children_opt)) = QueryNodes.get(p_comp.0) {
             p_text.0 = vnode.Placeholder.clone();
@@ -76,7 +84,8 @@ pub fn PlaceholderUpdateSystem(
                     }
                 }
             }
-            if has_main_text || !vnode.IsInput {
+
+            if has_main_text {
                 *p_vis = Visibility::Hidden;
             } else {
                 *p_vis = Visibility::Inherited;
@@ -89,34 +98,19 @@ pub fn TextStylingUpdateSystem(
     QueryNodes: Query<(&VuisNode, Option<&Children>)>,
     mut QueryTextFonts: Query<(&Text, &mut TextFont)>,
 ) {
-    for (vnode, children_opt) in QueryNodes.iter() {
+    for (node, children_opt) in QueryNodes.iter() {
         if let Some(children) = children_opt {
             for child in children.iter() {
-                if let Ok((text, mut text_font)) = QueryTextFonts.get_mut(child) {
-                    let is_bold = vnode.IsBold || text.0.contains("[b]");
-                    let is_italic = vnode.IsItalic || text.0.contains("[i]");
-
-                    if is_bold || is_italic {
-                        if !vnode.FontFamily.is_empty() {
-                            text_font.font = FontSource::Family(vnode.FontFamily.clone().into());
-                        } else {
-                            text_font.font = FontSource::Family("sans-serif".into());
-                        }
-                    } else if !vnode.FontFamily.is_empty() {
-                        text_font.font = FontSource::Family(vnode.FontFamily.clone().into());
-                    } else if vnode.FontData.is_none() {
-                        text_font.font = FontSource::Family("sans-serif".into());
-                    }
-
-                    text_font.font_size = FontSize::Px(vnode.FontSizePx);
-
-                    text_font.weight = if is_bold {
+                if let Ok((_, mut text_font)) = QueryTextFonts.get_mut(child) {
+                    text_font.font_size = FontSize::Px(node.FontSizePx);
+                    
+                    text_font.weight = if node.IsBold {
                         FontWeight::BOLD
                     } else {
                         FontWeight::default()
                     };
 
-                    text_font.style = if is_italic {
+                    text_font.style = if node.IsItalic {
                         FontStyle::Italic
                     } else {
                         FontStyle::default()
@@ -142,6 +136,7 @@ pub fn EditorUiSystem(
     mut SelectedEntity: ResMut<EditorSelection>,
     mut Config: ResMut<EditorConfig>,
     mut Helper: EditorUiAssetsAndEvents<'_>,
+    mut CanvasSettings: ResMut<CanvasSettings>,
 ) {
     let Ok(Ctx) = Contexts.ctx_mut() else { return; };
 
@@ -171,7 +166,7 @@ pub fn EditorUiSystem(
                     let Child = Commands.spawn((
                         VuisNode { 
                             Id: "Node".to_string(), 
-                            BackgroundColor: Color::srgb(0.5, 0.5, 0.5), 
+                            BackgroundColor: Color::LinearRgba(LinearRgba { red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0 }), 
                             WidthPx: 100.0, 
                             HeightPx: 100.0, 
                             PositionX: 50.0, 
@@ -182,7 +177,7 @@ pub fn EditorUiSystem(
                         },
                         VuisAnimationState::default(),
                         Node { position_type: PositionType::Absolute, left: Val::Px(50.0), top: Val::Px(50.0), width: Val::Px(100.0), height: Val::Px(100.0), ..default() },
-                        BackgroundColor(Color::srgb(0.5, 0.5, 0.5)),
+                        BackgroundColor(Color::LinearRgba(LinearRgba { red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0 })),
                         Transform::IDENTITY,
                     )).id();
                     Commands.entity(Target).add_child(Child);
@@ -195,8 +190,8 @@ pub fn EditorUiSystem(
                     let Child = Commands.spawn((
                         VuisNode { 
                             Id: "Text".to_string(), 
-                            BackgroundColor: Color::srgba(0.0, 0.0, 0.0, 0.0), 
-                            TextColor: Color::WHITE,
+                            BackgroundColor: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 }), 
+                            TextColor: Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 }),
                             WidthPx: 0.0, 
                             HeightPx: 0.0, 
                             HasText: true, 
@@ -217,7 +212,7 @@ pub fn EditorUiSystem(
                             justify_content: JustifyContent::Center,
                             ..default() 
                         },
-                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        BackgroundColor(Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 })),
                         Transform::IDENTITY,
                     )).id();
 
@@ -238,8 +233,8 @@ pub fn EditorUiSystem(
                     let Child = Commands.spawn((
                         VuisNode { 
                             Id: "Input".to_string(), 
-                            BackgroundColor: Color::WHITE, 
-                            TextColor: Color::BLACK,
+                            BackgroundColor: Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 }), 
+                            TextColor: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0 }),
                             WidthPx: 150.0, 
                             HeightPx: 30.0, 
                             HasText: true, 
@@ -261,7 +256,7 @@ pub fn EditorUiSystem(
                             justify_content: JustifyContent::Center,
                             ..default() 
                         },
-                        BackgroundColor(Color::WHITE),
+                        BackgroundColor(Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })),
                         Transform::IDENTITY,
                     )).id();
 
@@ -283,7 +278,7 @@ pub fn EditorUiSystem(
                     let Child = Commands.spawn((
                         VuisNode { 
                             Id: "Image".to_string(), 
-                            BackgroundColor: Color::srgba(0.0, 0.0, 0.0, 0.0), 
+                            BackgroundColor: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 }), 
                             WidthPx: 100.0, 
                             HeightPx: 100.0, 
                             IsImage: true, 
@@ -295,7 +290,7 @@ pub fn EditorUiSystem(
                         },
                         VuisAnimationState::default(),
                         Node { position_type: PositionType::Absolute, left: Val::Px(50.0), top: Val::Px(50.0), width: Val::Px(100.0), height: Val::Px(100.0), ..default() },
-                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        BackgroundColor(Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 })),
                         Transform::IDENTITY,
                     )).id();
                     Commands.entity(Target).add_child(Child);
@@ -412,10 +407,14 @@ pub fn EditorUiSystem(
                 Ui.horizontal(|Ui| {
                     if VNode.HasText {
                         Ui.label("Text Color:");
-                        let srgba = VNode.TextColor.to_srgba();
-                        let mut ColorArr = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
+                        let mut ColorArr = GetColorComponents(VNode.TextColor);
                         if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
-                            VNode.TextColor = Color::srgba(ColorArr[0], ColorArr[1], ColorArr[2], ColorArr[3]);
+                            VNode.TextColor = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
                             if let Ok(Children) = QueryChildren.get(Ent) {
                                 for Child in Children.iter() {
                                     if let Ok(mut text_color) = QueryTextColor.get_mut(Child) {
@@ -426,10 +425,14 @@ pub fn EditorUiSystem(
                         }
                     } else {
                         Ui.label("Color:");
-                        let srgba = VNode.BackgroundColor.to_srgba();
-                        let mut ColorArr = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
+                        let mut ColorArr = GetColorComponents(VNode.BackgroundColor);
                         if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
-                            VNode.BackgroundColor = Color::srgba(ColorArr[0], ColorArr[1], ColorArr[2], ColorArr[3]);
+                            VNode.BackgroundColor = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
                             BgColor.0 = VNode.BackgroundColor;
                         }
                     }
@@ -438,10 +441,14 @@ pub fn EditorUiSystem(
                 if VNode.HasText {
                     Ui.horizontal(|Ui| {
                         Ui.label("Bg Color:");
-                        let srgba = VNode.BackgroundColor.to_srgba();
-                        let mut ColorArr = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
+                        let mut ColorArr = GetColorComponents(VNode.BackgroundColor);
                         if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
-                            VNode.BackgroundColor = Color::srgba(ColorArr[0], ColorArr[1], ColorArr[2], ColorArr[3]);
+                            VNode.BackgroundColor = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
                             BgColor.0 = VNode.BackgroundColor;
                         }
                     });
@@ -457,20 +464,28 @@ pub fn EditorUiSystem(
                 if VNode.IsGradient {
                     Ui.horizontal(|Ui| {
                         Ui.label("Gradient Color 1:");
-                        let srgba = VNode.GradientColor1.to_srgba();
-                        let mut ColorArr = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
+                        let mut ColorArr = GetColorComponents(VNode.GradientColor1);
                         if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
-                            VNode.GradientColor1 = Color::srgba(ColorArr[0], ColorArr[1], ColorArr[2], ColorArr[3]);
+                            VNode.GradientColor1 = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
                             gradient_changed = true;
                         }
                     });
 
                     Ui.horizontal(|Ui| {
                         Ui.label("Gradient Color 2:");
-                        let srgba = VNode.GradientColor2.to_srgba();
-                        let mut ColorArr = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
+                        let mut ColorArr = GetColorComponents(VNode.GradientColor2);
                         if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
-                            VNode.GradientColor2 = Color::srgba(ColorArr[0], ColorArr[1], ColorArr[2], ColorArr[3]);
+                            VNode.GradientColor2 = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
                             gradient_changed = true;
                         }
                     });
@@ -479,7 +494,7 @@ pub fn EditorUiSystem(
                 if gradient_changed {
                     if VNode.IsGradient {
                         Commands.entity(Ent).insert(BackgroundGradient::from(LinearGradient {
-                            color_space: InterpolationColorSpace::Srgba,
+                            color_space: InterpolationColorSpace::Oklaba,
                             angle: 0.0,
                             stops: vec![
                                 ColorStop::percent(VNode.GradientColor1, 0.0),
@@ -507,10 +522,14 @@ pub fn EditorUiSystem(
 
                 Ui.horizontal(|Ui| {
                     Ui.label("Border Color:");
-                    let srgba = VNode.BorderColor.to_srgba();
-                    let mut ColorArr = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
+                    let mut ColorArr = GetColorComponents(VNode.BorderColor);
                     if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
-                        VNode.BorderColor = Color::srgba(ColorArr[0], ColorArr[1], ColorArr[2], ColorArr[3]);
+                        VNode.BorderColor = Color::LinearRgba(LinearRgba {
+                            red: ColorArr[0],
+                            green: ColorArr[1],
+                            blue: ColorArr[2],
+                            alpha: ColorArr[3],
+                        });
                         if let Some(mut border_color) = BorderColorOpt {
                             *border_color = BorderColor::all(VNode.BorderColor);
                         } else {
@@ -529,10 +548,14 @@ pub fn EditorUiSystem(
                 if VNode.HasShadow {
                     Ui.horizontal(|Ui| {
                         Ui.label("Shadow Color:");
-                        let srgba = VNode.ShadowColor.to_srgba();
-                        let mut ColorArr = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
+                        let mut ColorArr = GetColorComponents(VNode.ShadowColor);
                         if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
-                            VNode.ShadowColor = Color::srgba(ColorArr[0], ColorArr[1], ColorArr[2], ColorArr[3]);
+                            VNode.ShadowColor = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
                             shadow_changed = true;
                         }
                     });
@@ -749,10 +772,58 @@ pub fn EditorUiSystem(
             Ui.heading("Canvas Settings");
             Ui.separator();
             Ui.checkbox(&mut Config.SnappingEnabled, "Snap Elements");
+
+            Ui.separator();
+            Ui.heading("Canvas Resolution");
+
+            Ui.horizontal(|Ui| {
+                if Ui.button("FHD (1920x1080)").clicked() {
+                    CanvasSettings.Width = 1920.0;
+                    CanvasSettings.Height = 1080.0;
+                }
+                if Ui.button("HD (1280x720)").clicked() {
+                    CanvasSettings.Width = 1280.0;
+                    CanvasSettings.Height = 720.0;
+                }
+            });
+            Ui.horizontal(|Ui| {
+                if Ui.button("Mobile (375x812)").clicked() {
+                    CanvasSettings.Width = 375.0;
+                    CanvasSettings.Height = 812.0;
+                }
+                if Ui.button("Tablet (768x1024)").clicked() {
+                    CanvasSettings.Width = 768.0;
+                    CanvasSettings.Height = 1024.0;
+                }
+            });
+
+            Ui.horizontal(|Ui| {
+                Ui.label("Width:");
+                Ui.add(egui::DragValue::new(&mut CanvasSettings.Width).range(100.0..=4096.0));
+            });
+            Ui.horizontal(|Ui| {
+                Ui.label("Height:");
+                Ui.add(egui::DragValue::new(&mut CanvasSettings.Height).range(100.0..=4096.0));
+            });
+
+            Ui.separator();
+            Ui.heading("Zoom Level");
+            Ui.horizontal(|Ui| {
+                Ui.label(format!("{:.0}%", CanvasSettings.Zoom * 100.0));
+                if Ui.button("Zoom In").clicked() {
+                    CanvasSettings.Zoom = (CanvasSettings.Zoom + 0.1).min(5.0);
+                }
+                if Ui.button("Zoom Out").clicked() {
+                    CanvasSettings.Zoom = (CanvasSettings.Zoom - 0.1).max(0.1);
+                }
+                if Ui.button("100%").clicked() {
+                    CanvasSettings.Zoom = 1.0;
+                }
+            });
         }
     });
 
-    SelectedEntity.IsPointerOverUi = Ctx.wants_pointer_input() || Ctx.is_pointer_over_area() || Ctx.is_using_pointer();
+    SelectedEntity.IsPointerOverUi = Ctx.wants_pointer_input();
 }
 
 fn RenderHierarchy(

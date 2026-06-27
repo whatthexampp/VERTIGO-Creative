@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 #[derive(Component, Clone)]
 pub struct VuisNode {
@@ -51,8 +50,8 @@ impl Default for VuisNode {
     fn default() -> Self {
         Self {
             Id: "Node".to_string(),
-            BackgroundColor: Color::WHITE,
-            TextColor: Color::WHITE,
+            BackgroundColor: Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 }),
+            TextColor: Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 }),
             FontFamily: "".to_string(),
             FontSizePx: 16.0,
             WidthPx: 100.0,
@@ -72,17 +71,17 @@ impl Default for VuisNode {
             Rotation: 0.0,
             BorderRadiusPx: 0.0,
             BorderWidthPx: 0.0,
-            BorderColor: Color::srgba(0.0, 0.0, 0.0, 0.0),
+            BorderColor: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 }),
             IsGradient: false,
-            GradientColor1: Color::WHITE,
-            GradientColor2: Color::BLACK,
+            GradientColor1: Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 }),
+            GradientColor2: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0 }),
             IsInput: false,
             IsHidden: false,
             IsBold: false,
             IsItalic: false,
             Placeholder: "".to_string(),
             HasShadow: false,
-            ShadowColor: Color::srgba(0.0, 0.0, 0.0, 0.5),
+            ShadowColor: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.5 }),
             ShadowOffsetX: 4.0,
             ShadowOffsetY: 4.0,
             ShadowBlur: 10.0,
@@ -112,25 +111,29 @@ pub struct SelectedNode;
 #[derive(Component)]
 pub struct SelectedNodeInfoText;
 
+#[derive(Component, Clone)]
+pub struct PlaceholderTextComponent(pub Entity);
+
 pub fn load_image_from_bytes(bytes: &[u8]) -> Option<Image> {
-    if let Ok(dyn_img) = image::load_from_memory(bytes) {
-        let rgba_img = dyn_img.to_rgba8();
-        let width = rgba_img.width();
-        let height = rgba_img.height();
-        let raw_pixels = rgba_img.into_raw();
-        
-        Some(Image::new(
-            Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            raw_pixels,
-            TextureFormat::Rgba8UnormSrgb,
+    let mut image = Image::from_buffer(
+        bytes,
+        bevy::image::ImageType::Extension("png"),
+        bevy::image::CompressedImageFormats::all(),
+        true,
+        bevy::image::ImageSampler::Default,
+        bevy::asset::RenderAssetUsages::default(),
+    ).ok();
+
+    if image.is_none() {
+        image = Image::from_buffer(
+            bytes,
+            bevy::image::ImageType::Extension("jpg"),
+            bevy::image::CompressedImageFormats::all(),
+            true,
+            bevy::image::ImageSampler::Default,
             bevy::asset::RenderAssetUsages::default(),
-        ))
-    } else {
-        None
+        ).ok();
     }
+
+    image
 }

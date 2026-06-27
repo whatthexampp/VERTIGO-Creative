@@ -47,7 +47,7 @@ pub fn CreationSystem(
 
             let NewNode = VuisNode {
                 Id: NodeName,
-                BackgroundColor: if IsImage { Color::srgba(0.0, 0.0, 0.0, 0.0) } else { Color::srgb(0.5, 0.5, 0.5) },
+                BackgroundColor: if IsImage { Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 }) } else { Color::LinearRgba(LinearRgba { red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0 }) },
                 WidthPx: if matches!(ButtonType, CreationButton::SpawnText) { 0.0 } else { 100.0 },
                 HeightPx: if matches!(ButtonType, CreationButton::SpawnText) { 0.0 } else { 100.0 },
                 IsImage,
@@ -58,7 +58,7 @@ pub fn CreationSystem(
                 AnimTargetY: 100.0,
                 BorderRadiusPx: 0.0,
                 BorderWidthPx: 0.0,
-                BorderColor: Color::srgba(0.0, 0.0, 0.0, 0.0),
+                BorderColor: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 }),
                 ..default()
             };
 
@@ -76,6 +76,7 @@ pub fn CreationSystem(
                     ..default()
                 },
                 BackgroundColor(NewNode.BackgroundColor),
+                Transform::IDENTITY,
             ));
 
             if let Some(Handle) = ImageHandle {
