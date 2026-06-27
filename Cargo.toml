@@ -1,0 +1,18 @@
+[package]
+name = "vertigo-creative"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.19.0", features = ["system_font_discovery"] }
+bevy_egui = "*"
+rfd = "*"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22.1"
+flate2 = "1.0"
+ttf-parser = "0.25"
+image = "0.25"
+
+[profile.dev]
+debug = 1
