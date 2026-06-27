@@ -51,5 +51,11 @@ pub struct VuisDataNode {
     pub GridRows: Option<u32>,
     pub GridColumnGap: Option<f32>,
     pub GridRowGap: Option<f32>,
+    pub LayoutFlow: Option<String>,
+    pub IsScrollable: Option<bool>,
+    pub ScrollbarWidth: Option<f32>,
+    pub ScrollbarColorRgba: Option<[f32; 4]>,
+    pub ScrollbarTrackColorRgba: Option<[f32; 4]>,
+    pub ScrollbarBorderRadius: Option<f32>,
     pub Children: Vec<VuisDataNode>,
 }

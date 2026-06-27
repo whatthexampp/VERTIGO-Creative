@@ -80,7 +80,7 @@ pub fn SelectionAndDragSystem(
     WindowQuery: Query<&Window, With<PrimaryWindow>>,
     MouseInput: Res<ButtonInput<MouseButton>>,
     mut ParamSet: ParamSet<(
-        Query<(Entity, &mut VuisNode, &mut Node, &mut Transform)>,
+        Query<(Entity, &mut VuisNode, &mut Node, &mut UiTransform)>,
         Query<(Entity, Option<&VuisNode>, Option<&ChildOf>, Option<&InheritedVisibility>, &UiGlobalTransform, &ComputedNode)>,
     )>,
     QueryCanvas: Query<Entity, With<EditorCanvas>>,
@@ -500,7 +500,7 @@ pub fn SelectionAndDragSystem(
                             NodeComp.top = Val::Px(VNode.PositionY);
                             NodeComp.width = Val::Px(VNode.WidthPx);
                             NodeComp.height = Val::Px(VNode.HeightPx);
-                            TransComp.rotation = Quat::from_rotation_z(-VNode.Rotation);
+                            TransComp.rotation = Rot2::radians(-VNode.Rotation);
                         }
 
                         let PhysToWorld = |phys: Vec2| -> Vec2 {
@@ -561,7 +561,7 @@ pub fn SelectionAndDragSystem(
                         
                         NodeComp.left = Val::Px(VNode.PositionX);
                         NodeComp.top = Val::Px(VNode.PositionY);
-                        TransComp.rotation = Quat::from_rotation_z(-VNode.Rotation);
+                        TransComp.rotation = Rot2::radians(-VNode.Rotation);
                     }
                 }
             }

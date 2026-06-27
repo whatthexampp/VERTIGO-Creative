@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy_egui::EguiPrimaryContextPass;
-use crate::Editor::Canvas::{SetupCanvas, ScaleCanvasSystem, GridLayoutUpdateSystem, GridLayoutApplySystem, SyncNodeGridLinesSystem, ZoomSystem};
+use crate::Editor::Canvas::{SetupCanvas, ScaleCanvasSystem, GridLayoutUpdateSystem, GridLayoutApplySystem, SyncNodeGridLinesSystem, ZoomAndPanSystem};
 use crate::Editor::EguiPanels::{EditorUiSystem, SelectionHighlightSystem, AnimationSystem};
 use crate::Editor::Selection::{SelectionAndDragSystem, KeyboardMoveSystem, KeyboardCopyPasteSystem, EditorDragState, CopyPasteBuffer};
 use crate::Editor::History::{
@@ -39,6 +39,8 @@ pub struct CanvasSettings {
     pub Width: f32,
     pub Height: f32,
     pub Zoom: f32,
+    pub PanX: f32,
+    pub PanY: f32,
 }
 
 impl Default for CanvasSettings {
@@ -46,7 +48,9 @@ impl Default for CanvasSettings {
         Self {
             Width: 1920.0,
             Height: 1080.0,
-            Zoom: 1.0,
+            Zoom: 0.8,
+            PanX: 0.0,
+            PanY: 0.0,
         }
     }
 }
@@ -72,7 +76,7 @@ impl Plugin for EditorPlugin {
         ));
         AppBuilder.add_systems(Update, (
             ScaleCanvasSystem, 
-            ZoomSystem,
+            ZoomAndPanSystem,
             SelectionHighlightSystem, 
             AnimationSystem,
             KeyboardMoveSystem,

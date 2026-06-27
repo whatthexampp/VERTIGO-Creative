@@ -44,6 +44,12 @@ pub struct VuisNode {
     pub GridRows: u32,
     pub GridColumnGap: f32,
     pub GridRowGap: f32,
+    pub LayoutFlow: String,
+    pub IsScrollable: bool,
+    pub ScrollbarWidth: f32,
+    pub ScrollbarColor: Color,
+    pub ScrollbarTrackColor: Color,
+    pub ScrollbarBorderRadius: f32,
 }
 
 impl Default for VuisNode {
@@ -91,6 +97,12 @@ impl Default for VuisNode {
             GridRows: 2,
             GridColumnGap: 0.0,
             GridRowGap: 0.0,
+            LayoutFlow: "None".to_string(),
+            IsScrollable: false,
+            ScrollbarWidth: 8.0,
+            ScrollbarColor: Color::LinearRgba(LinearRgba { red: 0.5, green: 0.5, blue: 0.5, alpha: 0.8 }),
+            ScrollbarTrackColor: Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.2 }),
+            ScrollbarBorderRadius: 4.0,
         }
     }
 }

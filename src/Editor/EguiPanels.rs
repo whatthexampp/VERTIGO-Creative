@@ -125,7 +125,7 @@ pub fn TextStylingUpdateSystem(
 pub fn EditorUiSystem(
     mut Contexts: EguiContexts,
     mut Commands: Commands,
-    mut QueryNodes: Query<(Entity, &mut VuisNode, &mut BackgroundColor, &mut Node, Option<&mut BorderColor>, &mut Transform)>,
+    mut QueryNodes: Query<(Entity, &mut VuisNode, &mut BackgroundColor, &mut Node, Option<&mut BorderColor>, &mut UiTransform)>,
     mut QueryText: Query<&mut Text>,
     mut QueryTextFont: Query<&mut TextFont>,
     mut QueryTextColor: Query<&mut TextColor>,
@@ -178,7 +178,7 @@ pub fn EditorUiSystem(
                         VuisAnimationState::default(),
                         Node { position_type: PositionType::Absolute, left: Val::Px(50.0), top: Val::Px(50.0), width: Val::Px(100.0), height: Val::Px(100.0), ..default() },
                         BackgroundColor(Color::LinearRgba(LinearRgba { red: 0.5, green: 0.5, blue: 0.5, alpha: 1.0 })),
-                        Transform::IDENTITY,
+                        UiTransform::IDENTITY,
                     )).id();
                     Commands.entity(Target).add_child(Child);
                     Helper.RecordEvents.write(crate::Editor::History::RecordHistoryEvent);
@@ -213,7 +213,7 @@ pub fn EditorUiSystem(
                             ..default() 
                         },
                         BackgroundColor(Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 })),
-                        Transform::IDENTITY,
+                        UiTransform::IDENTITY,
                     )).id();
 
                     let TextChild = Commands.spawn((
@@ -257,7 +257,7 @@ pub fn EditorUiSystem(
                             ..default() 
                         },
                         BackgroundColor(Color::LinearRgba(LinearRgba { red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0 })),
-                        Transform::IDENTITY,
+                        UiTransform::IDENTITY,
                     )).id();
 
                     let TextChild = Commands.spawn((
@@ -291,7 +291,7 @@ pub fn EditorUiSystem(
                         VuisAnimationState::default(),
                         Node { position_type: PositionType::Absolute, left: Val::Px(50.0), top: Val::Px(50.0), width: Val::Px(100.0), height: Val::Px(100.0), ..default() },
                         BackgroundColor(Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0 })),
-                        Transform::IDENTITY,
+                        UiTransform::IDENTITY,
                     )).id();
                     Commands.entity(Target).add_child(Child);
                     Helper.RecordEvents.write(crate::Editor::History::RecordHistoryEvent);
@@ -360,9 +360,9 @@ pub fn EditorUiSystem(
                     if Ui.checkbox(&mut is_hidden, "Hidden").changed() {
                         VNode.IsHidden = is_hidden;
                         if is_hidden {
-                            Commands.entity(Ent).insert(Visibility::Hidden);
+                            Commands.entity(Ent).try_insert(Visibility::Hidden);
                         } else {
-                            Commands.entity(Ent).insert(Visibility::Inherited);
+                            Commands.entity(Ent).try_insert(Visibility::Inherited);
                         }
                     }
                 });
@@ -400,7 +400,7 @@ pub fn EditorUiSystem(
                     let mut Degrees = VNode.Rotation.to_degrees();
                     if Ui.add(egui::DragValue::new(&mut Degrees)).changed() {
                         VNode.Rotation = Degrees.to_radians();
-                        TransComp.rotation = Quat::from_rotation_z(-VNode.Rotation);
+                        TransComp.rotation = Rot2::radians(-VNode.Rotation);
                     }
                 });
 
@@ -493,7 +493,7 @@ pub fn EditorUiSystem(
 
                 if gradient_changed {
                     if VNode.IsGradient {
-                        Commands.entity(Ent).insert(BackgroundGradient::from(LinearGradient {
+                        Commands.entity(Ent).try_insert(BackgroundGradient::from(LinearGradient {
                             color_space: InterpolationColorSpace::Oklaba,
                             angle: 0.0,
                             stops: vec![
@@ -502,7 +502,7 @@ pub fn EditorUiSystem(
                             ],
                         }));
                     } else {
-                        Commands.entity(Ent).remove::<BackgroundGradient>();
+                        Commands.entity(Ent).try_remove::<BackgroundGradient>();
                     }
                 }
 
@@ -533,7 +533,7 @@ pub fn EditorUiSystem(
                         if let Some(mut border_color) = BorderColorOpt {
                             *border_color = BorderColor::all(VNode.BorderColor);
                         } else {
-                            Commands.entity(Ent).insert(BorderColor::all(VNode.BorderColor));
+                            Commands.entity(Ent).try_insert(BorderColor::all(VNode.BorderColor));
                         }
                     }
                 });
@@ -591,7 +591,7 @@ pub fn EditorUiSystem(
 
                 if shadow_changed {
                     if VNode.HasShadow {
-                        Commands.entity(Ent).insert(BoxShadow::new(
+                        Commands.entity(Ent).try_insert(BoxShadow::new(
                             VNode.ShadowColor,
                             Val::Px(VNode.ShadowOffsetX),
                             Val::Px(VNode.ShadowOffsetY),
@@ -599,7 +599,7 @@ pub fn EditorUiSystem(
                             Val::Px(VNode.ShadowBlur),
                         ));
                     } else {
-                        Commands.entity(Ent).remove::<BoxShadow>();
+                        Commands.entity(Ent).try_remove::<BoxShadow>();
                     }
                 }
 
@@ -610,7 +610,7 @@ pub fn EditorUiSystem(
                                 VNode.ImageData = Some(Bytes.clone());
                                 if let Some(LoadedImage) = load_image_from_bytes(&Bytes) {
                                     let Handle = Helper.Images.add(LoadedImage);
-                                    Commands.entity(Ent).insert(ImageNode::new(Handle));
+                                    Commands.entity(Ent).try_insert(ImageNode::new(Handle));
                                     Helper.RecordEvents.write(crate::Editor::History::RecordHistoryEvent);
                                 }
                             }
@@ -627,9 +627,9 @@ pub fn EditorUiSystem(
                                 for Child in Children.iter() {
                                     if QueryText.get(Child).is_ok() {
                                         if is_input {
-                                            Commands.entity(Child).insert(EditableText::default());
+                                            Commands.entity(Child).try_insert(EditableText::default());
                                         } else {
-                                            Commands.entity(Child).remove::<EditableText>();
+                                            Commands.entity(Child).try_remove::<EditableText>();
                                         }
                                     }
                                 }
@@ -687,7 +687,7 @@ pub fn EditorUiSystem(
                                         if let Ok(mut TextFontComp) = QueryTextFont.get_mut(Child) {
                                             TextFontComp.font = FontSource::Handle(Handle.clone());
                                         } else {
-                                            Commands.entity(Child).insert(TextFont { font: FontSource::Handle(Handle.clone()), font_size: FontSize::Px(VNode.FontSizePx), ..default() });
+                                            Commands.entity(Child).try_insert(TextFont { font: FontSource::Handle(Handle.clone()), font_size: FontSize::Px(VNode.FontSizePx), ..default() });
                                         }
                                         Helper.RecordEvents.write(crate::Editor::History::RecordHistoryEvent);
                                     }
@@ -698,12 +698,28 @@ pub fn EditorUiSystem(
                 }
 
                 Ui.separator();
-                Ui.heading("Grid Layout");
+                Ui.heading("Layout Flow");
                 Ui.horizontal(|Ui| {
-                    Ui.checkbox(&mut VNode.IsGrid, "Use Grid Layout");
+                    let mut flow = VNode.LayoutFlow.clone();
+                    egui::ComboBox::from_label("Flow")
+                        .selected_text(flow.clone())
+                        .show_ui(Ui, |Ui| {
+                            if Ui.selectable_value(&mut flow, "None".to_string(), "None (Absolute)").clicked() {
+                                VNode.LayoutFlow = "None".to_string();
+                            }
+                            if Ui.selectable_value(&mut flow, "Vertical".to_string(), "Vertical (Column)").clicked() {
+                                VNode.LayoutFlow = "Vertical".to_string();
+                            }
+                            if Ui.selectable_value(&mut flow, "Horizontal".to_string(), "Horizontal (Row)").clicked() {
+                                VNode.LayoutFlow = "Horizontal".to_string();
+                            }
+                            if Ui.selectable_value(&mut flow, "Grid".to_string(), "Grid Layout").clicked() {
+                                VNode.LayoutFlow = "Grid".to_string();
+                            }
+                        });
                 });
 
-                if VNode.IsGrid {
+                if VNode.LayoutFlow == "Grid" {
                     Ui.horizontal(|Ui| {
                         Ui.label("Grid Columns:");
                         let mut cols = VNode.GridColumns;
@@ -719,15 +735,67 @@ pub fn EditorUiSystem(
                             VNode.GridRows = rows;
                         }
                     });
+                }
 
+                if VNode.LayoutFlow != "None" {
                     Ui.horizontal(|Ui| {
-                        Ui.label("Column Gap:");
+                        Ui.label("Column Spacing / Gap:");
                         Ui.add(egui::DragValue::new(&mut VNode.GridColumnGap).range(0.0..=100.0));
                     });
 
                     Ui.horizontal(|Ui| {
-                        Ui.label("Row Gap:");
+                        Ui.label("Row Spacing / Gap:");
                         Ui.add(egui::DragValue::new(&mut VNode.GridRowGap).range(0.0..=100.0));
+                    });
+                }
+
+                Ui.separator();
+                Ui.heading("Scrolling");
+                Ui.horizontal(|Ui| {
+                    if Ui.checkbox(&mut VNode.IsScrollable, "Enable Scrolling").changed() {
+                        if VNode.IsScrollable {
+                            Commands.entity(Ent).try_insert(ScrollPosition::default());
+                        } else {
+                            Commands.entity(Ent).try_remove::<ScrollPosition>();
+                        }
+                    }
+                });
+
+                if VNode.IsScrollable {
+                    Ui.horizontal(|Ui| {
+                        Ui.label("Scrollbar Width:");
+                        Ui.add(egui::DragValue::new(&mut VNode.ScrollbarWidth).range(1.0..=30.0));
+                    });
+
+                    Ui.horizontal(|Ui| {
+                        Ui.label("Scrollbar Border Radius:");
+                        Ui.add(egui::DragValue::new(&mut VNode.ScrollbarBorderRadius).range(0.0..=100.0));
+                    });
+
+                    Ui.horizontal(|Ui| {
+                        Ui.label("Scrollbar Color:");
+                        let mut ColorArr = GetColorComponents(VNode.ScrollbarColor);
+                        if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
+                            VNode.ScrollbarColor = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
+                        }
+                    });
+
+                    Ui.horizontal(|Ui| {
+                        Ui.label("Track Color:");
+                        let mut ColorArr = GetColorComponents(VNode.ScrollbarTrackColor);
+                        if Ui.color_edit_button_rgba_unmultiplied(&mut ColorArr).changed() {
+                            VNode.ScrollbarTrackColor = Color::LinearRgba(LinearRgba {
+                                red: ColorArr[0],
+                                green: ColorArr[1],
+                                blue: ColorArr[2],
+                                alpha: ColorArr[3],
+                            });
+                        }
                     });
                 }
 
@@ -829,7 +897,7 @@ pub fn EditorUiSystem(
 fn RenderHierarchy(
     Ui: &mut egui::Ui,
     Entity: Entity,
-    QueryNodes: &Query<(Entity, &mut VuisNode, &mut BackgroundColor, &mut Node, Option<&mut BorderColor>, &mut Transform)>,
+    QueryNodes: &Query<(Entity, &mut VuisNode, &mut BackgroundColor, &mut Node, Option<&mut BorderColor>, &mut UiTransform)>,
     QueryChildren: &Query<&Children>,
     SelectedEntity: &mut EditorSelection,
     ReparentAction: &mut Option<(Entity, Entity)>,
@@ -888,14 +956,14 @@ pub fn SelectionHighlightSystem(
     if SelectedEntity.is_changed() {
         for Entity in QueryAll.iter() {
             if Some(Entity) == SelectedEntity.SelectedNode {
-                Commands.entity(Entity).insert((
+                Commands.entity(Entity).try_insert((
                     Outline::new(Val::Px(2.0), Val::Px(2.0), Color::WHITE),
                     SelectedNode,
                 ));
             } else {
                 if let Ok(mut EntCmds) = Commands.get_entity(Entity) {
-                    EntCmds.remove::<Outline>();
-                    EntCmds.remove::<SelectedNode>();
+                    EntCmds.try_remove::<Outline>();
+                    EntCmds.try_remove::<SelectedNode>();
                 }
             }
         }
@@ -904,7 +972,7 @@ pub fn SelectionHighlightSystem(
 
 pub fn AnimationSystem(
     Time: Res<Time>,
-    mut QueryNodes: Query<(&VuisNode, &mut Node, &mut Transform, &mut VuisAnimationState)>,
+    mut QueryNodes: Query<(&VuisNode, &mut Node, &mut UiTransform, &mut VuisAnimationState)>,
 ) {
     for (VNode, mut UiNode, mut Trans, mut State) in QueryNodes.iter_mut() {
         if State.IsPlaying && VNode.AnimDuration > 0.0 {
@@ -926,13 +994,13 @@ pub fn AnimationSystem(
             UiNode.height = if CurrentHeight <= 0.0 { Val::Auto } else { Val::Px(CurrentHeight) };
             UiNode.left = Val::Px(CurrentX);
             UiNode.top = Val::Px(CurrentY);
-            Trans.rotation = Quat::from_rotation_z(-CurrentRot);
+            Trans.rotation = Rot2::radians(-CurrentRot);
         } else if !State.IsPlaying {
             UiNode.width = if VNode.WidthPx <= 0.0 { Val::Auto } else { Val::Px(VNode.WidthPx) };
             UiNode.height = if VNode.HeightPx <= 0.0 { Val::Auto } else { Val::Px(VNode.HeightPx) };
             UiNode.left = Val::Px(VNode.PositionX);
             UiNode.top = Val::Px(VNode.PositionY);
-            Trans.rotation = Quat::from_rotation_z(-VNode.Rotation);
+            Trans.rotation = Rot2::radians(-VNode.Rotation);
         }
     }
 }

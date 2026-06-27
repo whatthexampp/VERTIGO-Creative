@@ -80,6 +80,12 @@ pub fn RecordHistorySystem(
                     GridRows: Some(2),
                     GridColumnGap: Some(0.0),
                     GridRowGap: Some(0.0),
+                    LayoutFlow: Some("None".to_string()),
+                    IsScrollable: Some(false),
+                    ScrollbarWidth: Some(8.0),
+                    ScrollbarColorRgba: Some([0.5, 0.5, 0.5, 0.8]),
+                    ScrollbarTrackColorRgba: Some([0.0, 0.0, 0.0, 0.2]),
+                    ScrollbarBorderRadius: Some(4.0),
                     Children: RootChildren,
                 },
             };

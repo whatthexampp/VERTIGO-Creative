@@ -102,6 +102,12 @@ pub fn SaveSystem(
                     GridRows: Some(2),
                     GridColumnGap: Some(0.0),
                     GridRowGap: Some(0.0),
+                    LayoutFlow: Some("None".to_string()),
+                    IsScrollable: Some(false),
+                    ScrollbarWidth: Some(8.0),
+                    ScrollbarColorRgba: Some([0.5, 0.5, 0.5, 0.8]),
+                    ScrollbarTrackColorRgba: Some([0.0, 0.0, 0.0, 0.2]),
+                    ScrollbarBorderRadius: Some(4.0),
                     Children: RootChildren,
                 },
             };
@@ -184,6 +190,8 @@ pub fn BuildDataTree(
         let extracted_grad1 = GetColorComponents(NodeComponent.GradientColor1);
         let extracted_grad2 = GetColorComponents(NodeComponent.GradientColor2);
         let extracted_shadow_color = GetColorComponents(NodeComponent.ShadowColor);
+        let scrollbar_color = GetColorComponents(NodeComponent.ScrollbarColor);
+        let scrollbar_track_color = GetColorComponents(NodeComponent.ScrollbarTrackColor);
 
         Some(VuisDataNode {
             Id: NodeComponent.Id.clone(),
@@ -229,6 +237,12 @@ pub fn BuildDataTree(
             GridRows: Some(NodeComponent.GridRows),
             GridColumnGap: Some(NodeComponent.GridColumnGap),
             GridRowGap: Some(NodeComponent.GridRowGap),
+            LayoutFlow: Some(NodeComponent.LayoutFlow.clone()),
+            IsScrollable: Some(NodeComponent.IsScrollable),
+            ScrollbarWidth: Some(NodeComponent.ScrollbarWidth),
+            ScrollbarColorRgba: Some(scrollbar_color),
+            ScrollbarTrackColorRgba: Some(scrollbar_track_color),
+            ScrollbarBorderRadius: Some(NodeComponent.ScrollbarBorderRadius),
             Children: ChildNodes,
         })
     } else {
@@ -347,6 +361,30 @@ pub fn SpawnDataTree(
         GridRows: Data.GridRows.unwrap_or(2),
         GridColumnGap: Data.GridColumnGap.unwrap_or(0.0),
         GridRowGap: Data.GridRowGap.unwrap_or(0.0),
+        LayoutFlow: Data.LayoutFlow.clone().unwrap_or_else(|| "None".to_string()),
+        IsScrollable: Data.IsScrollable.unwrap_or(false),
+        ScrollbarWidth: Data.ScrollbarWidth.unwrap_or(8.0),
+        ScrollbarColor: if let Some(sc) = Data.ScrollbarColorRgba {
+            Color::LinearRgba(LinearRgba {
+                red: sc[0],
+                green: sc[1],
+                blue: sc[2],
+                alpha: sc[3],
+            })
+        } else {
+            Color::LinearRgba(LinearRgba { red: 0.5, green: 0.5, blue: 0.5, alpha: 0.8 })
+        },
+        ScrollbarTrackColor: if let Some(stc) = Data.ScrollbarTrackColorRgba {
+            Color::LinearRgba(LinearRgba {
+                red: stc[0],
+                green: stc[1],
+                blue: stc[2],
+                alpha: stc[3],
+            })
+        } else {
+            Color::LinearRgba(LinearRgba { red: 0.0, green: 0.0, blue: 0.0, alpha: 0.2 })
+        },
+        ScrollbarBorderRadius: Data.ScrollbarBorderRadius.unwrap_or(4.0),
     };
 
     let mut EntityCommands = Commands.spawn((
@@ -362,16 +400,25 @@ pub fn SpawnDataTree(
             border_radius: BorderRadius::all(Val::Px(Data.BorderRadiusPx)),
             align_items: if Data.HasText { AlignItems::Center } else { AlignItems::default() },
             justify_content: if Data.HasText { JustifyContent::Center } else { JustifyContent::default() },
-            display: if NewNode.IsGrid { Display::Grid } else { Display::Flex },
-            grid_template_columns: if NewNode.IsGrid { vec![RepeatedGridTrack::flex(NewNode.GridColumns as u16, 1.0)] } else { Vec::new() },
-            grid_template_rows: if NewNode.IsGrid { vec![RepeatedGridTrack::flex(NewNode.GridRows as u16, 1.0)] } else { Vec::new() },
-            column_gap: if NewNode.IsGrid { Val::Px(NewNode.GridColumnGap) } else { Val::Auto },
-            row_gap: if NewNode.IsGrid { Val::Px(NewNode.GridRowGap) } else { Val::Auto },
+            display: if NewNode.LayoutFlow == "Grid" || (NewNode.LayoutFlow == "None" && NewNode.IsGrid) { Display::Grid } else { Display::Flex },
+            grid_template_columns: if NewNode.LayoutFlow == "Grid" || (NewNode.LayoutFlow == "None" && NewNode.IsGrid) { vec![RepeatedGridTrack::flex(NewNode.GridColumns as u16, 1.0)] } else { Vec::new() },
+            grid_template_rows: if NewNode.LayoutFlow == "Grid" || (NewNode.LayoutFlow == "None" && NewNode.IsGrid) { vec![RepeatedGridTrack::flex(NewNode.GridRows as u16, 1.0)] } else { Vec::new() },
+            column_gap: if NewNode.LayoutFlow == "Grid" || (NewNode.LayoutFlow == "None" && NewNode.IsGrid) { Val::Px(NewNode.GridColumnGap) } else { Val::Auto },
+            row_gap: if NewNode.LayoutFlow == "Grid" || (NewNode.LayoutFlow == "None" && NewNode.IsGrid) { Val::Px(NewNode.GridRowGap) } else { Val::Auto },
+            overflow: if NewNode.IsScrollable { Overflow::scroll_y() } else { Overflow::visible() },
+            scrollbar_width: if NewNode.IsScrollable { NewNode.ScrollbarWidth } else { 0.0 },
             ..default()
         },
         BackgroundColor(NewNode.BackgroundColor),
-        Transform::from_rotation(Quat::from_rotation_z(-Data.Rotation)),
+        UiTransform {
+            rotation: Rot2::radians(-Data.Rotation),
+            ..default()
+        },
     ));
+
+    if NewNode.IsScrollable {
+        EntityCommands.insert(ScrollPosition::default());
+    }
 
     if NewNode.IsHidden {
         EntityCommands.insert(Visibility::Hidden);
